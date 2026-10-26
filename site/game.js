@@ -1,22 +1,12 @@
 // 骰陣拼圖
-// Die faces name one blocked cell each (rows A–F, columns 1–6). Each of
-// the 36 cells appears on exactly one die; two dice repeat faces. These
-// are the physical faces listed by ManGo's Gaming (corrected) and by
-// mitchblank/gsqsolve, which cites the same coordinates:
-// https://mangosgaming.uk/portfolio/review-genius-square/
-// https://github.com/mitchblank/gsqsolve/blob/main/gsqsolve.cpp
-// https://www.reddit.com/r/boardgames/comments/kxt1q3/comment/gjc5m2n/
-// Keep the face lists in sync with tools/verify_solvability.py.
 
-const DICE = [
-  ["A1", "C1", "D1", "D2", "E2", "F3"],
-  ["A2", "B2", "C2", "A3", "B1", "B3"],
-  ["C3", "D3", "E3", "B4", "C4", "D4"],
-  ["E1", "F2", "F2", "B6", "A5", "A5"],
-  ["A4", "B5", "C6", "C5", "D6", "F6"],
-  ["E4", "F4", "E5", "F5", "D5", "E6"],
-  ["F1", "F1", "F1", "A6", "A6", "A6"],
-];
+import {
+  DICE,
+  readFirstSeconds,
+  rememberFirstCompletion,
+  rollDaily,
+  shareText,
+} from "./daily.js";
 
 const DIE_NUMERALS = ["一", "二", "三", "四", "五", "六", "七"];
 const ROW_LETTERS = "ABCDEF";
@@ -41,10 +31,17 @@ const boardEl = document.querySelector("#board");
 const trayEl = document.querySelector("#tray");
 const flipBtn = document.querySelector("#flip");
 const againBtn = document.querySelector("#again");
+const modeDailyBtn = document.querySelector("#mode-daily");
+const modeRandomBtn = document.querySelector("#mode-random");
+const dailyDateEl = document.querySelector("#daily-date");
+const recordEl = document.querySelector("#record");
+const shareBtn = document.querySelector("#share");
 const dragLayer = document.querySelector("#drag-layer");
 const announceEl = document.querySelector("#announce");
 
 const state = {
+  mode: "daily",
+  dateKey: "",
   dice: [],
   blockers: new Set(),
   pieces: [],
@@ -300,11 +297,33 @@ function fitBoard() {
   }
 }
 
+function storedSeconds() {
+  if (state.mode !== "daily" || !state.dateKey) return null;
+  try {
+    return readFirstSeconds(localStorage, state.dateKey);
+  } catch {
+    return null;
+  }
+}
+
+function paintDaily() {
+  const daily = state.mode === "daily";
+  modeDailyBtn.setAttribute("aria-pressed", daily ? "true" : "false");
+  modeRandomBtn.setAttribute("aria-pressed", daily ? "false" : "true");
+  dailyDateEl.hidden = !daily;
+  dailyDateEl.textContent = daily ? `日期（台北時區）：${state.dateKey}` : "";
+  const firstSeconds = storedSeconds();
+  recordEl.hidden = firstSeconds === null;
+  recordEl.textContent = firstSeconds === null ? "" : `今日第一次完成：${firstSeconds} 秒`;
+  shareBtn.hidden = !(daily && state.complete);
+}
+
 function render() {
   renderDice();
   renderBoard();
   renderTray();
   paintStatus();
+  paintDaily();
   paintTimer();
   fitBoard();
 }
@@ -315,8 +334,21 @@ function finishRound() {
   frozenSeconds = Math.floor((performance.now() - startedAt) / 1000);
   window.clearInterval(timerHandle);
   state.message = "棋盤已填滿";
+  if (state.mode === "daily") {
+    try {
+      const result = rememberFirstCompletion(localStorage, state.dateKey, frozenSeconds);
+      if (result.saved) {
+        announce(`棋盤已填滿，完成時間 ${frozenSeconds} 秒。已記下今日第一次完成。`);
+      } else {
+        announce(`棋盤已填滿，完成時間 ${frozenSeconds} 秒。今日第一次完成維持 ${result.seconds} 秒。`);
+      }
+    } catch {
+      announce(`棋盤已填滿，完成時間 ${frozenSeconds} 秒。`);
+    }
+  } else {
+    announce(`棋盤已填滿，完成時間 ${frozenSeconds} 秒。`);
+  }
   render();
-  announce(`棋盤已填滿，完成時間 ${frozenSeconds} 秒。`);
 }
 
 function commit() {
@@ -383,7 +415,14 @@ function newRound(shouldAnnounce) {
   drag = null;
   dragLayer.hidden = true;
   dragLayer.replaceChildren();
-  state.dice = DICE.map((faces) => faces[randomIndex()]);
+  if (state.mode === "daily") {
+    const puzzle = rollDaily(new Date());
+    state.dateKey = puzzle.dateKey;
+    state.dice = puzzle.dice.slice();
+  } else {
+    state.dateKey = "";
+    state.dice = DICE.map((faces) => faces[randomIndex()]);
+  }
   state.blockers = new Set(state.dice);
   state.pieces = TEMPLATES.map((template) => ({
     id: template.id,
@@ -397,7 +436,59 @@ function newRound(shouldAnnounce) {
   state.message = "";
   startTimer();
   render();
-  if (shouldAnnounce) announce("已重新擲骰，時間重新計算。");
+  if (shouldAnnounce) {
+    announce(
+      state.mode === "daily"
+        ? "已重新開始每日一題，時間重新計算。"
+        : "已重新擲骰，時間重新計算。",
+    );
+  }
+}
+
+function setMode(mode) {
+  if (state.mode === mode) return;
+  state.mode = mode;
+  newRound(false);
+  announce(mode === "daily" ? "已切換到每日一題。" : "已切換到隨機模式。");
+}
+
+function copyWithTextarea(text) {
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.inset = "0 auto auto 0";
+  area.style.width = "1px";
+  area.style.height = "1px";
+  area.style.opacity = "0";
+  document.body.append(area);
+  area.select();
+  const copied = document.execCommand("copy");
+  area.remove();
+  if (!copied) throw new Error("copy failed");
+}
+
+async function copyShareText() {
+  const text = shareText(state.dateKey, currentSeconds());
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      copyWithTextarea(text);
+    }
+    state.message = "已複製分享文字";
+    announce(`已複製分享文字：${text}`);
+  } catch {
+    try {
+      copyWithTextarea(text);
+      state.message = "已複製分享文字";
+      announce(`已複製分享文字：${text}`);
+    } catch {
+      state.message = "無法複製分享文字";
+      announce("無法複製分享文字。");
+    }
+  }
+  paintStatus();
 }
 
 function boardMetrics() {
@@ -606,6 +697,18 @@ flipBtn.addEventListener("click", () => {
 
 againBtn.addEventListener("click", () => {
   newRound(true);
+});
+
+modeDailyBtn.addEventListener("click", () => {
+  setMode("daily");
+});
+
+modeRandomBtn.addEventListener("click", () => {
+  setMode("random");
+});
+
+shareBtn.addEventListener("click", () => {
+  copyShareText();
 });
 
 document.addEventListener("contextmenu", (event) => {

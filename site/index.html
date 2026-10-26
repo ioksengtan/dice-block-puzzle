@@ -22,9 +22,17 @@
         <p class="timer" id="timer">時間：0 秒</p>
       </header>
 
+      <div class="modes" role="group" aria-label="遊戲模式">
+        <button type="button" id="mode-daily" aria-pressed="true">每日一題</button>
+        <button type="button" id="mode-random" aria-pressed="false">隨機模式</button>
+      </div>
+      <p class="daily-date" id="daily-date" hidden></p>
+      <p class="record" id="record" hidden></p>
+
       <div class="actions">
         <button type="button" class="primary" id="again">再玩一次</button>
         <button type="button" class="secondary" id="flip">翻面</button>
+        <button type="button" class="secondary share" id="share" hidden>複製分享文字</button>
       </div>
 
       <section class="dice-section" aria-labelledby="dice-heading">
@@ -46,6 +54,6 @@
       </section>
     </main>
     <p class="sr" id="announce" aria-live="polite"></p>
-    <script src="game.js"></script>
+    <script type="module" src="game.js"></script>
   </body>
 </html>

@@ -1,0 +1,16 @@
+name: 自動測試
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: 執行自動測試
+        run: node --test
+        env:
+          TZ: Pacific/Honolulu

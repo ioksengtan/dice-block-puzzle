@@ -26,6 +26,7 @@ body {
   height: 100%;
   background: var(--bg);
   color: var(--ink);
+  overflow-x: hidden;
   touch-action: manipulation;
 }
 
@@ -112,11 +113,52 @@ h1 {
   white-space: nowrap;
 }
 
+.modes,
 .actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
   width: 100%;
+  min-width: 0;
+}
+
+.modes button,
+.actions button {
+  min-width: 0;
+}
+
+.modes button {
+  background: transparent;
+  color: var(--ink);
+  box-shadow: inset 0 0 0 2px var(--line);
+}
+
+.modes button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--card);
+  box-shadow: none;
+}
+
+.daily-date,
+.record {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: center;
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.daily-date {
+  color: var(--muted);
+}
+
+.record {
+  font-weight: 700;
+  color: var(--ok);
+}
+
+.share {
+  grid-column: 1 / -1;
 }
 
 button {
