@@ -26,7 +26,7 @@ import time
 ROWS = COLS = 6
 FULL = (1 << (ROWS * COLS)) - 1
 
-# Keep in sync with site/game.js. Order is 第一顆 through 第七顆.
+# Keep in sync with site/daily.js. Order is 第一顆 through 第七顆.
 DICE = (
     ("A1", "C1", "D1", "D2", "E2", "F3"),
     ("A2", "B2", "C2", "A3", "B1", "B3"),
