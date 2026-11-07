@@ -292,9 +292,56 @@ function fitBoard() {
   boardEl.style.width = "100%";
   const available = section.clientHeight;
   const measured = boardEl.getBoundingClientRect();
-  if (measured.height > available + 1 && measured.height > 0) {
-    boardEl.style.width = `${Math.max(160, Math.floor(measured.width * (available / measured.height)))}px`;
+  if (available <= 0 || measured.height <= 0) return;
+  if (measured.height > available + 1) {
+    const scaled = Math.floor(measured.width * (available / measured.height));
+    boardEl.style.width = `${Math.max(120, Math.min(measured.width, scaled))}px`;
   }
+}
+
+function playfieldFits() {
+  const app = document.querySelector(".app");
+  if (!app) return true;
+  const bounds = app.getBoundingClientRect();
+  const cards = [...trayEl.querySelectorAll(".card")];
+  for (const card of cards) {
+    const rect = card.getBoundingClientRect();
+    if (rect.width < 44 || rect.height < 44) return false;
+    if (rect.top < bounds.top - 1 || rect.bottom > bounds.bottom + 1) return false;
+  }
+  const cell = boardEl.querySelector(".cell");
+  if (!cell) return false;
+  const cellBox = cell.getBoundingClientRect();
+  if (cellBox.width < 20 || cellBox.height < 20) return false;
+  const board = boardEl.getBoundingClientRect();
+  if (board.width <= 0 || board.height <= 0) return false;
+  return board.top >= bounds.top - 1 && board.bottom <= bounds.bottom + 1;
+}
+
+function fitPlayfield() {
+  const sizes = [18, 16, 15, 14];
+  for (const size of sizes) {
+    trayEl.style.setProperty("--pip", `${size}px`);
+    fitBoard();
+    if (playfieldFits()) return;
+  }
+}
+
+function syncViewport() {
+  const viewport = window.visualViewport;
+  const reported = Math.round((viewport && viewport.height) || window.innerHeight || 0);
+  if (!reported) return;
+  const narrow = window.matchMedia("(max-width: 520px)").matches;
+  // Full phone screens keep reporting about 844px while the visible page ends
+  // near 73% (the reported screenshot showed the tray under the toolbar at
+  // about 617 of 844). Shorter viewports are already the usable height.
+  const height = narrow && reported >= 800 ? Math.max(600, Math.round(reported * 0.73)) : reported;
+  const top = viewport ? viewport.offsetTop : 0;
+  document.documentElement.style.setProperty("--vv-height", `${height}px`);
+  document.documentElement.style.setProperty("--vv-top", `${Math.round(top)}px`);
+  const app = document.querySelector(".app");
+  if (app) app.classList.toggle("is-tight", narrow && height <= 660);
+  fitPlayfield();
 }
 
 function storedSeconds() {
@@ -325,7 +372,7 @@ function render() {
   paintStatus();
   paintDaily();
   paintTimer();
-  fitBoard();
+  syncViewport();
 }
 
 function finishRound() {
@@ -633,7 +680,7 @@ document.addEventListener("pointerdown", (event) => {
     el.classList.toggle("selected", el.dataset.piece === state.selectedId);
   });
   const onBoard = card.classList.contains("piece");
-  const handle = onBoard ? event.target.closest(".pip.on") : event.target.closest(".shape-hit");
+  const handle = onBoard ? event.target.closest(".pip.on") : card;
   if (!handle || !card.contains(handle)) return;
   const pip = event.target.closest(".pip.on");
   const grabbed = pip && card.contains(pip) ? pip : nearestPip(card, event.clientX, event.clientY);
@@ -716,4 +763,8 @@ document.addEventListener("contextmenu", (event) => {
 });
 
 newRound(false);
-window.addEventListener("resize", fitBoard);
+window.addEventListener("resize", syncViewport);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", syncViewport);
+  window.visualViewport.addEventListener("scroll", syncViewport);
+}
