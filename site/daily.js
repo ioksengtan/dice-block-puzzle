@@ -48,7 +48,7 @@ export function taipeiDateKey(instant = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
-function hashSeed(text) {
+export function hashSeed(text) {
   let hash = 0x811c9dc5;
   for (let index = 0; index < text.length; index += 1) {
     hash ^= text.charCodeAt(index);
@@ -57,7 +57,7 @@ function hashSeed(text) {
   return hash >>> 0;
 }
 
-function mulberry32(seed) {
+export function mulberry32(seed) {
   let state = seed >>> 0;
   return function next() {
     state = (state + 0x6d2b79f5) | 0;

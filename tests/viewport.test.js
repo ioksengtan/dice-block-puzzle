@@ -228,6 +228,47 @@ test("手機與桌機可視區", { skip: !puppeteer && "需要本機 Chrome 與 
     assert.equal(await page.$$eval("#dice li", (items) => items.length), 7);
     if (shotDir) await page.screenshot({ path: path.join(shotDir, "viewport_390x700_after_actions.png") });
     await page.close();
+
+    // 盤面代碼模式：用網址參數載入同一盤，確認新輸入欄不會造成橫向捲動。
+    const boardPage = await openPage(browser, `${url}?b=K7P2`, { width: 390, height: 700, mobile: true });
+    const boardView = await boardPage.evaluate(() => {
+      const doc = document.documentElement;
+      const board = document.querySelector("#board").getBoundingClientRect();
+      const section = document.querySelector(".board-section").getBoundingClientRect();
+      return {
+        scrollWidth: doc.scrollWidth,
+        clientWidth: doc.clientWidth,
+        scrollHeight: doc.scrollHeight,
+        clientHeight: doc.clientHeight,
+        panelHidden: document.querySelector("#board-code-panel").hidden,
+        code: document.querySelector("#board-code-value").textContent,
+        boardClipped: board.height > section.height + 1,
+      };
+    });
+    assert.equal(boardView.scrollWidth <= boardView.clientWidth + 1, true, "盤面代碼模式有水平捲動");
+    assert.equal(boardView.scrollHeight <= boardView.clientHeight + 1, true, "盤面代碼模式有垂直捲動");
+    assert.equal(boardView.panelHidden, false, "盤面代碼面板沒有顯示");
+    assert.equal(boardView.code, "K7P2", "沒有顯示目前盤面代碼");
+
+    // 鎖定正式回合：收起設定控制項，棋盤不被裁切，『再玩一次』停用。
+    await boardPage.click("#board-code-lock");
+    await boardPage.waitForFunction(() => document.querySelector(".app").classList.contains("round-locked"));
+    const lockedView = await boardPage.evaluate(() => {
+      const doc = document.documentElement;
+      const board = document.querySelector("#board").getBoundingClientRect();
+      const section = document.querySelector(".board-section").getBoundingClientRect();
+      return {
+        scrollWidth: doc.scrollWidth,
+        clientWidth: doc.clientWidth,
+        againDisabled: document.querySelector("#again").disabled,
+        boardClipped: board.height > section.height + 1,
+      };
+    });
+    assert.equal(lockedView.scrollWidth <= lockedView.clientWidth + 1, true, "鎖定後有水平捲動");
+    assert.equal(lockedView.againDisabled, true, "鎖定後『再玩一次』沒有停用");
+    assert.equal(lockedView.boardClipped, false, "鎖定後棋盤被裁切");
+    if (shotDir) await boardPage.screenshot({ path: path.join(shotDir, "viewport_390x700_board_locked.png") });
+    await boardPage.close();
   } finally {
     await browser.close();
     await new Promise((resolve) => server.close(resolve));
