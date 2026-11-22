@@ -382,7 +382,11 @@ function syncViewport() {
   // Full phone screens keep reporting about 844px while the visible page ends
   // near 73% (the reported screenshot showed the tray under the toolbar at
   // about 617 of 844). Shorter viewports are already the usable height.
-  const height = narrow && reported >= 800 ? Math.max(600, Math.round(reported * 0.73)) : reported;
+  // 盤面代碼模式多了設定面板，但骰子列與一般提示已收起，需要（也可以）用掉
+  // 更多可視高度，否則未鎖定時 6×6 棋盤會被裁切、格子縮到看不清；放寬到約
+  // 85%，仍為底部瀏覽器工具列保留餘裕，不影響每日一題／隨機模式的 73% 上限。
+  const factor = state.mode === "board" ? 0.85 : 0.73;
+  const height = narrow && reported >= 800 ? Math.max(600, Math.round(reported * factor)) : reported;
   const top = viewport ? viewport.offsetTop : 0;
   document.documentElement.style.setProperty("--vv-height", `${height}px`);
   document.documentElement.style.setProperty("--vv-top", `${Math.round(top)}px`);
@@ -438,6 +442,9 @@ function applyControlState() {
   boardCodePlanBtn.disabled = lock;
   // 鎖定後收起設定控制項與提示，把空間讓給棋盤，方便正式回合競速。
   appEl.classList.toggle("round-locked", lock);
+  // 盤面代碼模式整體採較精簡的版面（收起骰子列與一般提示），並在 syncViewport
+  // 取用較多可視高度，讓設定面板與完整棋盤同時容得下。
+  appEl.classList.toggle("board-mode", state.mode === "board");
 }
 
 function render() {

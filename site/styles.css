@@ -277,15 +277,19 @@ h1 {
   overflow-wrap: anywhere;
 }
 
-/* 正式回合鎖定後，收起設定用的輸入與按鈕、提示文字，讓棋盤變大。
-   骰子結果在棋盤上已以阻擋格呈現，鎖定競速時一併收起節省空間。 */
+/* 盤面代碼模式：骰子結果已在棋盤上以阻擋格呈現，一般提示與選取狀態也一併
+   收起，把垂直空間讓給 6×6 棋盤，避免窄螢幕未鎖定時棋盤被裁切。 */
+.app.board-mode .dice-section,
+.app.board-mode .hint,
+.app.board-mode .selection {
+  display: none;
+}
+
+/* 正式回合鎖定後，再收起設定用的輸入與按鈕、提示文字，讓棋盤更大。 */
 .app.round-locked .code-entry,
 .app.round-locked #board-code-next,
 .app.round-locked #board-code-plan,
-.app.round-locked .plan,
-.app.round-locked .hint,
-.app.round-locked .selection,
-.app.round-locked .dice-section {
+.app.round-locked .plan {
   display: none;
 }
 
