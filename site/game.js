@@ -8,6 +8,14 @@ import {
   shareText,
 } from "./daily.js";
 
+import {
+  isValidBoardCode,
+  makeBoardCode,
+  normalizeBoardCode,
+  readBoardCodeFromSearch,
+  rollBoardFromCode,
+} from "./board.js";
+
 const DIE_NUMERALS = ["一", "二", "三", "四", "五", "六", "七"];
 const ROW_LETTERS = "ABCDEF";
 
@@ -33,11 +41,23 @@ const flipBtn = document.querySelector("#flip");
 const againBtn = document.querySelector("#again");
 const modeDailyBtn = document.querySelector("#mode-daily");
 const modeRandomBtn = document.querySelector("#mode-random");
+const modeBoardBtn = document.querySelector("#mode-board");
 const dailyDateEl = document.querySelector("#daily-date");
 const recordEl = document.querySelector("#record");
 const shareBtn = document.querySelector("#share");
+const boardPanel = document.querySelector("#board-code-panel");
+const boardCodeValue = document.querySelector("#board-code-value");
+const boardCodeInput = document.querySelector("#board-code-input");
+const boardCodeLoadBtn = document.querySelector("#board-code-load");
+const boardCodeNextBtn = document.querySelector("#board-code-next");
+const boardCodePlanBtn = document.querySelector("#board-code-plan");
+const boardSeriesEl = document.querySelector("#board-series");
+const boardPlanEl = document.querySelector("#board-plan");
+const boardLockBtn = document.querySelector("#board-code-lock");
+const boardLockStatusEl = document.querySelector("#board-lock-status");
 const dragLayer = document.querySelector("#drag-layer");
 const announceEl = document.querySelector("#announce");
+const appEl = document.querySelector(".app");
 
 const state = {
   mode: "daily",
@@ -48,6 +68,9 @@ const state = {
   selectedId: null,
   complete: false,
   message: "",
+  boardCode: "",
+  series: 1,
+  locked: false,
 };
 
 let startedAt = 0;
@@ -59,6 +82,30 @@ function randomIndex() {
   const values = new Uint32Array(1);
   crypto.getRandomValues(values);
   return values[0] % 6;
+}
+
+function randomUnit() {
+  const values = new Uint32Array(1);
+  crypto.getRandomValues(values);
+  return values[0] / 4294967296;
+}
+
+function freshBoardCode() {
+  return makeBoardCode(randomUnit);
+}
+
+function syncBoardUrl() {
+  try {
+    const url = new URL(window.location.href);
+    if (state.mode === "board" && state.boardCode) {
+      url.searchParams.set("b", state.boardCode);
+    } else {
+      url.searchParams.delete("b");
+    }
+    window.history.replaceState(null, "", url);
+  } catch {
+    // 某些環境不支援 history，忽略即可。
+  }
 }
 
 function coord(row, col) {
@@ -335,7 +382,11 @@ function syncViewport() {
   // Full phone screens keep reporting about 844px while the visible page ends
   // near 73% (the reported screenshot showed the tray under the toolbar at
   // about 617 of 844). Shorter viewports are already the usable height.
-  const height = narrow && reported >= 800 ? Math.max(600, Math.round(reported * 0.73)) : reported;
+  // 盤面代碼模式多了設定面板，但骰子列與一般提示已收起，需要（也可以）用掉
+  // 更多可視高度，否則未鎖定時 6×6 棋盤會被裁切、格子縮到看不清；放寬到約
+  // 85%，仍為底部瀏覽器工具列保留餘裕，不影響每日一題／隨機模式的 73% 上限。
+  const factor = state.mode === "board" ? 0.85 : 0.73;
+  const height = narrow && reported >= 800 ? Math.max(600, Math.round(reported * factor)) : reported;
   const top = viewport ? viewport.offsetTop : 0;
   document.documentElement.style.setProperty("--vv-height", `${height}px`);
   document.documentElement.style.setProperty("--vv-top", `${Math.round(top)}px`);
@@ -356,7 +407,8 @@ function storedSeconds() {
 function paintDaily() {
   const daily = state.mode === "daily";
   modeDailyBtn.setAttribute("aria-pressed", daily ? "true" : "false");
-  modeRandomBtn.setAttribute("aria-pressed", daily ? "false" : "true");
+  modeRandomBtn.setAttribute("aria-pressed", state.mode === "random" ? "true" : "false");
+  modeBoardBtn.setAttribute("aria-pressed", state.mode === "board" ? "true" : "false");
   dailyDateEl.hidden = !daily;
   dailyDateEl.textContent = daily ? `日期（台北時區）：${state.dateKey}` : "";
   const firstSeconds = storedSeconds();
@@ -365,12 +417,44 @@ function paintDaily() {
   shareBtn.hidden = !(daily && state.complete);
 }
 
+function paintBoardPanel() {
+  const board = state.mode === "board";
+  boardPanel.hidden = !board;
+  if (!board) return;
+  boardCodeValue.textContent = state.boardCode || "—";
+  boardSeriesEl.textContent = `三戰兩勝：第 ${state.series} 盤`;
+  boardLockBtn.setAttribute("aria-pressed", state.locked ? "true" : "false");
+  boardLockBtn.textContent = state.locked ? "解除鎖定" : "鎖定本盤";
+  boardLockStatusEl.textContent = state.locked
+    ? "正式回合鎖定中：『再玩一次』與『產生下一盤』已停用，按『解除鎖定』才能換盤。"
+    : "正式回合開始前先按『鎖定本盤』，避免比賽途中誤按『再玩一次』歸零。";
+}
+
+function applyControlState() {
+  const lock = state.locked;
+  modeDailyBtn.disabled = lock;
+  modeRandomBtn.disabled = lock;
+  modeBoardBtn.disabled = lock;
+  againBtn.disabled = lock;
+  boardCodeInput.disabled = lock;
+  boardCodeLoadBtn.disabled = lock;
+  boardCodeNextBtn.disabled = lock;
+  boardCodePlanBtn.disabled = lock;
+  // 鎖定後收起設定控制項與提示，把空間讓給棋盤，方便正式回合競速。
+  appEl.classList.toggle("round-locked", lock);
+  // 盤面代碼模式整體採較精簡的版面（收起骰子列與一般提示），並在 syncViewport
+  // 取用較多可視高度，讓設定面板與完整棋盤同時容得下。
+  appEl.classList.toggle("board-mode", state.mode === "board");
+}
+
 function render() {
   renderDice();
   renderBoard();
   renderTray();
   paintStatus();
   paintDaily();
+  paintBoardPanel();
+  applyControlState();
   paintTimer();
   syncViewport();
 }
@@ -378,6 +462,7 @@ function render() {
 function finishRound() {
   if (state.complete) return;
   state.complete = true;
+  state.locked = false;
   frozenSeconds = Math.floor((performance.now() - startedAt) / 1000);
   window.clearInterval(timerHandle);
   state.message = "棋盤已填滿";
@@ -466,6 +551,12 @@ function newRound(shouldAnnounce) {
     const puzzle = rollDaily(new Date());
     state.dateKey = puzzle.dateKey;
     state.dice = puzzle.dice.slice();
+  } else if (state.mode === "board") {
+    state.dateKey = "";
+    if (!state.boardCode) state.boardCode = freshBoardCode();
+    const board = rollBoardFromCode(state.boardCode);
+    state.boardCode = board.code;
+    state.dice = board.dice.slice();
   } else {
     state.dateKey = "";
     state.dice = DICE.map((faces) => faces[randomIndex()]);
@@ -482,21 +573,31 @@ function newRound(shouldAnnounce) {
   state.complete = false;
   state.message = "";
   startTimer();
+  syncBoardUrl();
   render();
   if (shouldAnnounce) {
-    announce(
-      state.mode === "daily"
-        ? "已重新開始每日一題，時間重新計算。"
-        : "已重新擲骰，時間重新計算。",
-    );
+    let text = "已重新擲骰，時間重新計算。";
+    if (state.mode === "daily") {
+      text = "已重新開始每日一題，時間重新計算。";
+    } else if (state.mode === "board") {
+      text = `已重新開始盤面代碼 ${state.boardCode}，時間重新計算。`;
+    }
+    announce(text);
   }
 }
 
 function setMode(mode) {
   if (state.mode === mode) return;
+  if (state.locked) return;
   state.mode = mode;
   newRound(false);
-  announce(mode === "daily" ? "已切換到每日一題。" : "已切換到隨機模式。");
+  const text =
+    mode === "daily"
+      ? "已切換到每日一題。"
+      : mode === "board"
+        ? "已切換到盤面代碼模式。"
+        : "已切換到隨機模式。";
+  announce(text);
 }
 
 function copyWithTextarea(text) {
@@ -743,6 +844,7 @@ flipBtn.addEventListener("click", () => {
 });
 
 againBtn.addEventListener("click", () => {
+  if (state.locked) return;
   newRound(true);
 });
 
@@ -754,14 +856,88 @@ modeRandomBtn.addEventListener("click", () => {
   setMode("random");
 });
 
+modeBoardBtn.addEventListener("click", () => {
+  setMode("board");
+});
+
 shareBtn.addEventListener("click", () => {
   copyShareText();
+});
+
+function loadBoardCode() {
+  if (state.locked) return;
+  const raw = boardCodeInput.value;
+  if (!isValidBoardCode(raw)) {
+    state.message = "請輸入有效的盤面代碼";
+    paintStatus();
+    announce("盤面代碼無效，請再確認。");
+    return;
+  }
+  state.boardCode = normalizeBoardCode(raw);
+  state.series = 1;
+  boardPlanEl.hidden = true;
+  boardPlanEl.textContent = "";
+  boardCodeInput.value = "";
+  newRound(false);
+  announce(`已載入盤面代碼 ${state.boardCode}，時間重新計算。`);
+}
+
+boardCodeLoadBtn.addEventListener("click", loadBoardCode);
+
+boardCodeInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    loadBoardCode();
+  }
+});
+
+boardCodeNextBtn.addEventListener("click", () => {
+  if (state.locked) return;
+  state.boardCode = freshBoardCode();
+  state.series += 1;
+  boardPlanEl.hidden = true;
+  boardPlanEl.textContent = "";
+  newRound(false);
+  announce(`已產生第 ${state.series} 盤，盤面代碼 ${state.boardCode}。`);
+});
+
+boardCodePlanBtn.addEventListener("click", () => {
+  if (state.locked) return;
+  const codes = [freshBoardCode(), freshBoardCode(), freshBoardCode()];
+  state.boardCode = codes[0];
+  state.series = 1;
+  const numerals = ["一", "二", "三"];
+  boardPlanEl.textContent = `預備代碼　${codes
+    .map((code, index) => `第${numerals[index]}盤 ${code}`)
+    .join("　")}`;
+  boardPlanEl.hidden = false;
+  newRound(false);
+  announce(
+    `已預備三盤代碼：第一盤 ${codes[0]}、第二盤 ${codes[1]}、第三盤 ${codes[2]}。目前載入第一盤。`,
+  );
+});
+
+boardLockBtn.addEventListener("click", () => {
+  if (state.mode !== "board") return;
+  state.locked = !state.locked;
+  state.message = state.locked ? "已鎖定本盤" : "已解除鎖定";
+  render();
+  announce(
+    state.locked
+      ? "已鎖定本盤，正式回合進行中，『再玩一次』已停用。"
+      : "已解除鎖定，可以換盤了。",
+  );
 });
 
 document.addEventListener("contextmenu", (event) => {
   if (event.target.closest("[data-piece]")) event.preventDefault();
 });
 
+const urlBoardCode = readBoardCodeFromSearch(window.location.search);
+if (urlBoardCode) {
+  state.mode = "board";
+  state.boardCode = urlBoardCode;
+}
 newRound(false);
 window.addEventListener("resize", syncViewport);
 if (window.visualViewport) {

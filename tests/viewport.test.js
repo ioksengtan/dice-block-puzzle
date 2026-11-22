@@ -124,6 +124,41 @@ function assertPlayfield(layout, { minCell, minCard }) {
   }
 }
 
+async function readBoardView(page) {
+  return page.evaluate(() => {
+    const doc = document.documentElement;
+    const section = document.querySelector(".board-section").getBoundingClientRect();
+    const board = document.querySelector("#board").getBoundingClientRect();
+    const cellRects = [...document.querySelectorAll("#board .cell")].map((el) => el.getBoundingClientRect());
+    const within = (r) =>
+      r.width > 0 && r.height > 0 && r.left >= -1 && r.top >= -1 &&
+      r.right <= window.innerWidth + 1 && r.bottom <= window.innerHeight + 1;
+    return {
+      scrollWidth: doc.scrollWidth,
+      clientWidth: doc.clientWidth,
+      scrollHeight: doc.scrollHeight,
+      clientHeight: doc.clientHeight,
+      panelHidden: document.querySelector("#board-code-panel").hidden,
+      code: document.querySelector("#board-code-value").textContent,
+      boardClipped: board.height > section.height + 1,
+      cellCount: cellRects.length,
+      minCell: cellRects.length ? Math.min(...cellRects.map((r) => Math.min(r.width, r.height))) : 0,
+      allCellsInside: cellRects.every(within),
+      locked: document.querySelector(".app").classList.contains("round-locked"),
+    };
+  });
+}
+
+function assertBoardFits(view, label) {
+  assert.equal(view.scrollWidth <= view.clientWidth + 1, true, `${label}：有水平捲動`);
+  assert.equal(view.scrollHeight <= view.clientHeight + 1, true, `${label}：有垂直捲動`);
+  assert.equal(view.panelHidden, false, `${label}：盤面代碼面板沒有顯示`);
+  assert.equal(view.cellCount, 36, `${label}：棋盤格數不是 36`);
+  assert.equal(view.boardClipped, false, `${label}：棋盤被裁切`);
+  assert.equal(view.allCellsInside, true, `${label}：有棋盤格超出可視範圍`);
+  assert.ok(view.minCell >= 20, `${label}：棋盤格過小 ${view.minCell}`);
+}
+
 async function openPage(browser, url, { width, height, mobile }) {
   const page = await browser.newPage();
   page.on("pageerror", (error) => {
@@ -228,6 +263,31 @@ test("手機與桌機可視區", { skip: !puppeteer && "需要本機 Chrome 與 
     assert.equal(await page.$$eval("#dice li", (items) => items.length), 7);
     if (shotDir) await page.screenshot({ path: path.join(shotDir, "viewport_390x700_after_actions.png") });
     await page.close();
+
+    // 盤面代碼模式：用網址參數載入同一盤，未鎖定與鎖定兩種狀態、兩種高度
+    // 都要完整看到 6×6 棋盤（不被裁切、沒有橫向捲動、格子夠大）。
+    for (const size of [
+      { name: "390x844", width: 390, height: 844 },
+      { name: "390x700", width: 390, height: 700 },
+    ]) {
+      const boardPage = await openPage(browser, `${url}?b=K7P2`, { ...size, mobile: true });
+
+      const unlocked = await readBoardView(boardPage);
+      assert.equal(unlocked.locked, false, `${size.name}：預設不應該鎖定`);
+      assert.equal(unlocked.code, "K7P2", `${size.name} 未鎖定：沒有顯示目前盤面代碼`);
+      assertBoardFits(unlocked, `${size.name} 未鎖定`);
+      if (shotDir) await boardPage.screenshot({ path: path.join(shotDir, `viewport_${size.name}_board.png`) });
+
+      // 鎖定正式回合：收起設定控制項，棋盤仍不被裁切，『再玩一次』停用。
+      await boardPage.click("#board-code-lock");
+      await boardPage.waitForFunction(() => document.querySelector(".app").classList.contains("round-locked"));
+      const locked = await readBoardView(boardPage);
+      assertBoardFits(locked, `${size.name} 鎖定`);
+      assert.equal(await boardPage.$eval("#again", (el) => el.disabled), true, `${size.name} 鎖定：『再玩一次』沒有停用`);
+      if (shotDir) await boardPage.screenshot({ path: path.join(shotDir, `viewport_${size.name}_board_locked.png`) });
+
+      await boardPage.close();
+    }
   } finally {
     await browser.close();
     await new Promise((resolve) => server.close(resolve));

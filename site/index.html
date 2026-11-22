@@ -25,9 +25,39 @@
       <div class="modes" role="group" aria-label="遊戲模式">
         <button type="button" id="mode-daily" aria-pressed="true">每日一題</button>
         <button type="button" id="mode-random" aria-pressed="false">隨機模式</button>
+        <button type="button" id="mode-board" aria-pressed="false">盤面代碼</button>
       </div>
       <p class="daily-date" id="daily-date" hidden></p>
       <p class="record" id="record" hidden></p>
+
+      <section class="board-code" id="board-code-panel" hidden aria-label="盤面代碼同題競速">
+        <p class="code-display">
+          盤面代碼 <span class="code-value" id="board-code-value">—</span>
+          <span class="series" id="board-series"></span>
+        </p>
+        <div class="code-entry">
+          <label class="sr" for="board-code-input">輸入盤面代碼</label>
+          <input
+            type="text"
+            id="board-code-input"
+            inputmode="latin"
+            autocomplete="off"
+            autocapitalize="characters"
+            autocorrect="off"
+            spellcheck="false"
+            maxlength="12"
+            placeholder="輸入對方的盤面代碼"
+          />
+          <button type="button" class="secondary" id="board-code-load">載入</button>
+        </div>
+        <div class="code-actions">
+          <button type="button" class="secondary" id="board-code-next">產生下一盤</button>
+          <button type="button" class="secondary" id="board-code-plan">預備三盤</button>
+          <button type="button" class="secondary lock" id="board-code-lock" aria-pressed="false">鎖定本盤</button>
+        </div>
+        <p class="plan" id="board-plan" hidden></p>
+        <p class="lock-status" id="board-lock-status"></p>
+      </section>
 
       <div class="actions">
         <button type="button" class="primary" id="again">再玩一次</button>
